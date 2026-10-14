@@ -1,0 +1,6 @@
+# frozen_string_literal: true
+# encoding: UTF-8
+
+APP_PATH = File.expand_path("config/application", Dir.pwd)
+require File.expand_path("config/boot", Dir.pwd)
+require "rails/commands"
