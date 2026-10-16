@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_10_14_000000) do
+ActiveRecord::Schema[8.0].define(version: 2026_10_16_160500) do
   create_table "tickets", force: :cascade do |t|
     t.string "title", null: false
     t.text "description"
@@ -19,5 +19,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_10_14_000000) do
     t.string "ai_suggested_action"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.string "customer_name"
+    t.string "customer_email"
   end
 end
