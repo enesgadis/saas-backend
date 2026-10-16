@@ -1,3 +1,7 @@
 Rails.application.routes.draw do
-  resources :tickets, only: %i[index show create update]
+  resources :tickets, only: %i[index show create update] do
+    member do
+      post :analyze
+    end
+  end
 end

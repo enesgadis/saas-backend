@@ -1,5 +1,5 @@
 class TicketsController < ApplicationController
-  before_action :set_ticket, only: %i[show update]
+  before_action :set_ticket, only: %i[show update analyze]
 
   def index
     @tickets = Ticket.order(created_at: :desc)
@@ -13,14 +13,18 @@ class TicketsController < ApplicationController
   def create
     @ticket = Ticket.new(ticket_params)
 
-    if @ticket.valid?
-      analysis = TicketAnalyzerService.new(description: @ticket.description).call
-      @ticket.ai_draft_reply = analysis[:draft_reply]
-      @ticket.ai_suggested_action = analysis[:suggested_action]
-    end
-
     if @ticket.save
       render json: @ticket, status: :created
+    else
+      render json: { errors: @ticket.errors.full_messages }, status: :unprocessable_entity
+    end
+  end
+
+  # Temsilci tarafından talep edilen canlı AI analizi
+  def analyze
+    analysis = TicketAnalyzerService.new(description: @ticket.description).call
+    if @ticket.update(ai_draft_reply: analysis[:draft_reply], ai_suggested_action: analysis[:suggested_action])
+      render json: @ticket
     else
       render json: { errors: @ticket.errors.full_messages }, status: :unprocessable_entity
     end
