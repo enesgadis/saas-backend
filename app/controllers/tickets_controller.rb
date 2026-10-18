@@ -23,7 +23,13 @@ class TicketsController < ApplicationController
   # Temsilci tarafından talep edilen canlı AI analizi
   def analyze
     analysis = TicketAnalyzerService.new(description: @ticket.description).call
-    if @ticket.update(ai_draft_reply: analysis[:draft_reply], ai_suggested_action: analysis[:suggested_action])
+    if @ticket.update(
+      ai_draft_reply: analysis[:draft_reply],
+      ai_suggested_action: analysis[:suggested_action],
+      department: analysis[:department],
+      internal_note: analysis[:internal_note],
+      time_saved_minutes: analysis[:time_saved_minutes]
+    )
       render json: @ticket
     else
       render json: { errors: @ticket.errors.full_messages }, status: :unprocessable_entity
@@ -54,7 +60,10 @@ class TicketsController < ApplicationController
       :ai_draft_reply,
       :ai_suggested_action,
       :customer_name,
-      :customer_email
+      :customer_email,
+      :department,
+      :internal_note,
+      :time_saved_minutes
     )
   end
 end

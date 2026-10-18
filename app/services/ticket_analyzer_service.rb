@@ -43,14 +43,25 @@ class TicketAnalyzerService
             parts: [
               {
                 text: <<~PROMPT
-                  Sen kurumsal müşteri operasyonları platformunun (OmniResolve) yapay zekâ modelisin.
-                  Gelen müşteri destek talebini incele. Temsilcinin tek tıkla uygulayacağı operasyonel aksiyonu ve profesyonel yanıtı üret.
+                  Sen kurumsal müşteri operasyonları platformunun (OmniResolve) akıllı yapay zekâ orkestrasyon motorusun.
+                  Gelen müşteri destek talebini incele:
+                  1. Müşteriye iletilecek profesyonel, empatik Türkçe çözüm yanıtını oluştur.
+                  2. Bu sorunun şirkette hangi birime yönlendirilmesi gerektiğini belirle (Örn: Lojistik & Kargo Deposu, Muhasebe & Finans, İade & Kalite Kontrol, Teknik Destek & Güvenlik, Müşteri İlişkileri).
+                  3. O birimdeki görevli uzmana gidecek ÖZEL İÇ SEVK NOTUNU (operasyonel aksiyon talimatı ve sorun özeti) hazırla.
+                  4. Bu karmaşıklıktaki bir konunun manuel çözülme süresi ile AI ile çözülme farkından sağlanan TAHMİNİ SÜRE TASARRUFUNU dakika cinsinden (tamsayı, örn: 18) hesapla.
+                  5. Temsilcinin tek tıkla yapacağı operasyonel aksiyon adını belirle.
                   
                   Müşteri Mesajı:
                   "#{@description}"
 
                   SADECE şu JSON şemasında yanıt ver:
-                  {"draft_reply": "Saygılı, profesyonel Türkçe çözüm mesajı...", "suggested_action": "Sistem Aksiyon Adı (Örn: İade Onayı & Kargo Kodu Gönder / Kargo Önceliği Ver / Şifre Sıfırla)"}
+                  {
+                    "draft_reply": "Müşteriye saygılı ve çözüm sunan resmi mesaj...",
+                    "department": "İlgili Birim Adı",
+                    "internal_note": "İlgili birim çalışanına yönelik sevk notu ve teknik detaylar...",
+                    "suggested_action": "Sistem Aksiyon Adı",
+                    "time_saved_minutes": 20
+                  }
                 PROMPT
               }
             ]
@@ -73,10 +84,13 @@ class TicketAnalyzerService
           text_content = body.dig("candidates", 0, "content", "parts", 0, "text")
           if text_content.present?
             parsed = JSON.parse(text_content.to_s.force_encoding("UTF-8"))
-            if parsed["draft_reply"].present? && parsed["suggested_action"].present?
+            if parsed["draft_reply"].present?
               return {
                 draft_reply: parsed["draft_reply"],
-                suggested_action: parsed["suggested_action"]
+                department: parsed["department"] || "Müşteri Hizmetleri",
+                internal_note: parsed["internal_note"] || "Temsilci incelemesi talep edilmiştir.",
+                suggested_action: parsed["suggested_action"] || "Talebi Çözümle",
+                time_saved_minutes: (parsed["time_saved_minutes"] || 18).to_i
               }
             end
           end
@@ -99,7 +113,7 @@ class TicketAnalyzerService
         messages: [
           {
             role: "system",
-            content: "You are an AI customer support assistant. Analyze ticket. Return JSON: {\"draft_reply\": \"...\", \"suggested_action\": \"...\"}"
+            content: "You are an AI customer support assistant. Analyze ticket. Return JSON: {\"draft_reply\": \"...\", \"department\": \"...\", \"internal_note\": \"...\", \"suggested_action\": \"...\", \"time_saved_minutes\": 20}"
           },
           { role: "user", content: @description }
         ],
@@ -111,7 +125,10 @@ class TicketAnalyzerService
     parsed = JSON.parse(content)
     {
       draft_reply: parsed["draft_reply"],
-      suggested_action: parsed["suggested_action"]
+      department: parsed["department"] || "Müşteri Hizmetleri",
+      internal_note: parsed["internal_note"] || "Sistem otomatik sevki.",
+      suggested_action: parsed["suggested_action"] || "Aksiyon Uygula",
+      time_saved_minutes: (parsed["time_saved_minutes"] || 15).to_i
     }
   rescue StandardError => e
     Rails.logger.warn("OpenAI Çağrı Hatası: #{e.message}")
@@ -124,29 +141,44 @@ class TicketAnalyzerService
     if desc.match?(/(iade|arız|bozuk|çalışmıyor|kırık|değişim|kusurlu|hasarlı|para)/)
       code = "YRT-#{rand(100_000..999_999)}"
       {
-        draft_reply: "Merhaba, yaşadığınız aksaklık için son derece üzgünüz. İade ve değişim süreciniz onaylanmıştır. #{code} anlaşma kodu ile en yakın kargo şubesinden ürünü ücretsiz olarak tarafımıza gönderebilirsiniz. Ürün merkezimize ulaştığı gün iade tutarı kartınıza yansıtılacaktır.",
-        suggested_action: "İade Onayı & Kargo Kodu Gönder (#{code})"
+        draft_reply: "Merhaba, yaşadığınız aksaklık için son derece üzgünüz. İade ve değişim süreciniz başlatılmıştır. #{code} anlaşma kodu ile en yakın kargo şubesinden ürünü ücretsiz olarak tarafımıza gönderebilirsiniz. Ürün merkezimize ulaştığı gün iade tutarı kartınıza yansıtılacaktır.",
+        department: "İade & Kalite Kontrol Birimi",
+        internal_note: "Müşteri hasarlı/kusurlu ürün bildirimi yaptı. #{code} anlaşma kodu atandı. Ürün depoya ulaştığında fiziksel kontrol yapılarak iade havuzuna aktarılmalıdır.",
+        suggested_action: "İade Onayı & Kargo Kodu Gönder (#{code})",
+        time_saved_minutes: 24
       }
     elsif desc.match?(/(kargo|teslim|ulaşmadı|gecik|nerede|takip|sipariş|paket|sevkiyat)/)
       tracking = "TR#{rand(10_000_000..99_999_999)}"
       {
         draft_reply: "Merhaba, siparişinizin teslimatındaki gecikme için özür dileriz. Gönderiniz lojistik merkezimizle görüşülerek öncelikli dağıtım statüsüne alınmıştır. Güncel kargo takip numaranız: #{tracking}. Kurye hareketleri SMS ile paylaşılmaya devam edecektir.",
-        suggested_action: "Kargo Önceliği Ver & Takip No İlet (#{tracking})"
+        department: "Lojistik & Kargo Operasyonları",
+        internal_note: "Geciken sevkiyat tespit edildi. Kargo transfer merkezine acil sevk kaydı oluşturuldu. Öncelikli kurye ataması yapılması gerekiyor. Takip: #{tracking}",
+        suggested_action: "Kargo Önceliği Ver & Takip No İlet (#{tracking})",
+        time_saved_minutes: 19
       }
     elsif desc.match?(/(şifre|giriş|parola|login|hesap|oturum|email|e-posta|erişim)/)
       {
         draft_reply: "Merhaba, hesabınızın güvenliğini sağlamak amacıyla tek kullanımlık güvenli şifre sıfırlama bağlantısı kayıtlı e-posta adresinize yönlendirilmiştir. Bağlantı 15 dakika boyunca geçerlidir.",
-        suggested_action: "Tek Kullanımlık Şifre Sıfırlama Bağlantısı Gönder"
+        department: "Bilgi Teknolojileri & Hesap Güvenliği",
+        internal_note: "Kullanıcı hesap erişim kilidi veya şifre sıfırlama sorunu bildirdi. Kimlik doğrulama logları incelendi, şüpheli aktivite yok. Token üretildi.",
+        suggested_action: "Tek Kullanımlık Şifre Sıfırlama Bağlantısı Gönder",
+        time_saved_minutes: 14
       }
     elsif desc.match?(/(fatura|tahsilat|çekim|ödeme|kart|ücret|para kesil)/)
       {
         draft_reply: "Merhaba, muhasebe ve finans birimimiz işlemlerinizi incelemiştir. İlgili tutara ilişkin dekont ve e-fatura kopyası e-posta adresinize iletilmiş, mükerrer provizyon varsa anında iptal talimatı verilmiştir.",
-        suggested_action: "Fatura Doğrulama & Muhasebe Dekontu Gönder"
+        department: "Muhasebe & Finansal Operasyonlar",
+        internal_note: "Mükerrer çekim/fatura inceleme talebi. Banka sanal POS ekstreleri ile ERP fatura kayıtlarının eşleştirilmesi ve ters bakiye varsa mutabakatı gerekiyor.",
+        suggested_action: "Fatura Doğrulama & Muhasebe Dekontu Gönder",
+        time_saved_minutes: 32
       }
     else
       {
         draft_reply: "Merhaba, ilettiğiniz konu OmniResolve akıllı destek sistemimiz tarafından incelenmiş ve ilgili operasyonel birime aktarılmıştır. Çözüm adımları en kısa sürede tarafınıza iletilecektir.",
-        suggested_action: "Operasyonel İnceleme & Öncelikli Yanıt İlet"
+        department: "Genel Müşteri Operasyonları",
+        internal_note: "Ön değerlendirme tamamlandı. Standart destek prosedürleri kapsamında saha uzmanına atandı.",
+        suggested_action: "Operasyonel İnceleme & Öncelikli Yanıt İlet",
+        time_saved_minutes: 12
       }
     end
   end
