@@ -8,23 +8,23 @@ class TicketAnalyzerService
 
   def initialize(description:)
     @description = description.to_s
-    @gemini_key = ENV["GEMINI_API_KEY"].presence
-    @openai_key = ENV["OPENAI_API_KEY"].presence
+    @gemini_key = ENV["GEMINI_API_KEY"].to_s.strip.empty? ? nil : ENV["GEMINI_API_KEY"].to_s.strip
+    @openai_key = ENV["OPENAI_API_KEY"].to_s.strip.empty? ? nil : ENV["OPENAI_API_KEY"].to_s.strip
   end
 
   def call
-    return smart_heuristic_response if @description.strip.empty?
+    return smart_heuristic_response if @description.to_s.strip.empty?
 
     # 1. Öncelik: Google Gemini API (Canlı LLM Akıl Yürütme)
-    if @gemini_key.present?
+    if @gemini_key && !@gemini_key.empty?
       gemini_result = call_gemini
-      return gemini_result if gemini_result.present?
+      return gemini_result if gemini_result && !gemini_result.empty?
     end
 
     # 2. Öncelik: OpenAI GPT-4o-mini (Eğer Bakiye Varsa)
-    if @openai_key.present?
+    if @openai_key && !@openai_key.empty?
       openai_result = call_openai
-      return openai_result if openai_result.present?
+      return openai_result if openai_result && !openai_result.empty?
     end
 
     # 3. Öncelik: Fail-Safe Akıllı Analiz Motoru
@@ -82,12 +82,12 @@ class TicketAnalyzerService
           raw_body = res.body.to_s.force_encoding("UTF-8")
           body = JSON.parse(raw_body)
           text_content = body.dig("candidates", 0, "content", "parts", 0, "text")
-          if text_content.present?
+          if text_content && !text_content.to_s.strip.empty?
             parsed = JSON.parse(text_content.to_s.force_encoding("UTF-8"))
-            if parsed["draft_reply"].present?
+            if parsed["draft_reply"] && !parsed["draft_reply"].to_s.strip.empty?
               return {
                 draft_reply: parsed["draft_reply"],
-                department: parsed["department"] || "Müşteri Hizmetleri",
+                department: parsed["department"] || "Kayıp Eşya & Sürücü Masası",
                 internal_note: parsed["internal_note"] || "Temsilci incelemesi talep edilmiştir.",
                 suggested_action: parsed["suggested_action"] || "Talebi Çözümle",
                 time_saved_minutes: (parsed["time_saved_minutes"] || 18).to_i
@@ -95,10 +95,10 @@ class TicketAnalyzerService
             end
           end
         else
-          Rails.logger.warn("Gemini model #{model_name} #{res.code} döndü, diğer model deneniyor.")
+          puts "Gemini model #{model_name} #{res.code} döndü" if defined?(Rails) && Rails.env.development?
         end
       rescue StandardError => e
-        Rails.logger.warn("Gemini #{model_name} çağrı hatası: #{e.message}")
+        puts "Gemini #{model_name} çağrı hatası: #{e.message}" if defined?(Rails) && Rails.env.development?
       end
     end
 
@@ -181,6 +181,5 @@ class TicketAnalyzerService
         time_saved_minutes: 15
       }
     end
-  end
   end
 end
