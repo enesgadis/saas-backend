@@ -4,7 +4,7 @@ require "uri"
 require "openai"
 
 class TicketAnalyzerService
-  GEMINI_MODELS = ["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]
+  GEMINI_MODELS = ["gemini-3.8-flash", "gemini-2.5-flash", "gemini-1.5-flash"]
 
   def initialize(description:)
     @description = description.to_s
@@ -15,7 +15,7 @@ class TicketAnalyzerService
   def call
     return smart_heuristic_response if @description.strip.empty?
 
-    # 1. Öncelik: Google Gemini API (Canlı LLM Çağrısı)
+    # 1. Öncelik: Google Gemini API (Canlı LLM Akıl Yürütme)
     if @gemini_key.present?
       gemini_result = call_gemini
       return gemini_result if gemini_result.present?
@@ -43,24 +43,24 @@ class TicketAnalyzerService
             parts: [
               {
                 text: <<~PROMPT
-                  Sen kurumsal müşteri operasyonları platformunun (OmniResolve) akıllı yapay zekâ orkestrasyon motorusun.
-                  Gelen müşteri destek talebini incele:
-                  1. Müşteriye iletilecek profesyonel, empatik Türkçe çözüm yanıtını oluştur.
-                  2. Bu sorunun şirkette hangi birime yönlendirilmesi gerektiğini belirle (Örn: Lojistik & Kargo Deposu, Muhasebe & Finans, İade & Kalite Kontrol, Teknik Destek & Güvenlik, Müşteri İlişkileri).
-                  3. O birimdeki görevli uzmana gidecek ÖZEL İÇ SEVK NOTUNU (operasyonel aksiyon talimatı ve sorun özeti) hazırla.
-                  4. Bu karmaşıklıktaki bir konunun manuel çözülme süresi ile AI ile çözülme farkından sağlanan TAHMİNİ SÜRE TASARRUFUNU dakika cinsinden (tamsayı, örn: 18) hesapla.
-                  5. Temsilcinin tek tıkla yapacağı operasyonel aksiyon adını belirle.
+                  Sen küresel ulaşım devi Uber'in yeni nesil hibrit operasyon destek motorusun (OmniResolve).
+                  Müşterinin veya sürücünün ilettiği serbest metin destek talebini doğrudan kendi bağlamında anla, akıl yürüt ve dinamik çözüm üret:
+                  1. Müşteriye iletilecek, soruna tam nokta atışı yapan, empati içeren profesyonel Türkçe çözüm yanıtını oluştur ("draft_reply").
+                  2. Bu durumun Uber bünyesindeki hangi uzman operasyonel birime iletileceğini belirle ("department"). (Örn: "Kayıp Eşya & Sürücü Masası", "Ücret & Rota Uyuşmazlıkları Birimi", "Yolcu & Sürüş Emniyeti (Trust & Safety)", "Uber Eats Restoran Operasyonları", "Sürücü Hak Ediş & Finans").
+                  3. O birimdeki görevli personele gidecek TEKNİK VE OPERASYONEL İÇ SEVK NOTUNU hazırla ("internal_note").
+                  4. Bu karmaşıklıktaki bir vakanın geleneksel Zendesk temsilcisi tarafından manuel çözülme süresi ile AI destekli tek tıkla çözümü arasındaki TAHMİNİ SÜRE TASARRUFUNU dakika cinsinden (tamsayı, örn: 22) hesapla ("time_saved_minutes").
+                  5. Temsilcinin tek tıkla uygulayacağı Uber operasyon aksiyonunu belirle ("suggested_action") (Örn: "Sürücüye Maskeli İletişim İzni Ver & Bildirim At", "GPS Rota Sapmasını Onayla & Bakiye İadesi Geç", "Sürücü Profilini İncelemeye Al").
                   
-                  Müşteri Mesajı:
+                  Gelen Destek Talebi:
                   "#{@description}"
 
-                  SADECE şu JSON şemasında yanıt ver:
+                  SADECE geçerli JSON formatında şu şemayı döndür:
                   {
-                    "draft_reply": "Müşteriye saygılı ve çözüm sunan resmi mesaj...",
-                    "department": "İlgili Birim Adı",
-                    "internal_note": "İlgili birim çalışanına yönelik sevk notu ve teknik detaylar...",
-                    "suggested_action": "Sistem Aksiyon Adı",
-                    "time_saved_minutes": 20
+                    "draft_reply": "Müşteriye özel çözüm ve bilgilendirme metni...",
+                    "department": "İlgili Operasyonel Birim",
+                    "internal_note": "Ekibe teknik özet ve yapılması gereken operasyon adımı...",
+                    "suggested_action": "Operasyonel Aksiyon Adı",
+                    "time_saved_minutes": 25
                   }
                 PROMPT
               }
@@ -138,48 +138,49 @@ class TicketAnalyzerService
   def smart_heuristic_response
     desc = @description.to_s.encode("UTF-8", invalid: :replace, undef: :replace, replace: "").downcase
 
-    if desc.match?(/(iade|arız|bozuk|çalışmıyor|kırık|değişim|kusurlu|hasarlı|para)/)
-      code = "YRT-#{rand(100_000..999_999)}"
+    if desc.match?(/(çanta|eşya|cüzdan|telefon|unuttum|araba|koltuk|kayıp)/)
+      code = "UB-LF-#{rand(100_000..999_999)}"
       {
-        draft_reply: "Merhaba, yaşadığınız aksaklık için son derece üzgünüz. İade ve değişim süreciniz başlatılmıştır. #{code} anlaşma kodu ile en yakın kargo şubesinden ürünü ücretsiz olarak tarafımıza gönderebilirsiniz. Ürün merkezimize ulaştığı gün iade tutarı kartınıza yansıtılacaktır.",
-        department: "İade & Kalite Kontrol Birimi",
-        internal_note: "Müşteri hasarlı/kusurlu ürün bildirimi yaptı. #{code} anlaşma kodu atandı. Ürün depoya ulaştığında fiziksel kontrol yapılarak iade havuzuna aktarılmalıdır.",
-        suggested_action: "İade Onayı & Kargo Kodu Gönder (#{code})",
-        time_saved_minutes: 24
+        draft_reply: "Merhaba, araçta eşyanızı unuttuğunuz için üzgünüz. Kaydınız (#{code}) ile sürücümüzle acil operasyonel hattan iletişime geçildi. Güvenliğiniz için telefon numaranız maskelenerek sürücüye aktarılmış olup teslimat için sizinle en kısa sürede iletişime geçmesi talimatı verilmiştir.",
+        department: "Kayıp Eşya & Sürücü Masası",
+        internal_note: "Müşteri araçta kıymetli eşya unuttuğunu bildirdi. Plaka ve son yolculuk telemetrisi eşleştirildi. Sürücüye acil maskeli arama protokolü tetiklendi.",
+        suggested_action: "Sürücüye Acil Bildirim & Maskeli İletişim Sağla",
+        time_saved_minutes: 25
       }
-    elsif desc.match?(/(kargo|teslim|ulaşmadı|gecik|nerede|takip|sipariş|paket|sevkiyat)/)
-      tracking = "TR#{rand(10_000_000..99_999_999)}"
+    elsif desc.match?(/(ücret|tutar|fazla|rota|köprü|gişe|itiraz|çekil|para|tahsilat)/)
+      refund = rand(250..650)
       {
-        draft_reply: "Merhaba, siparişinizin teslimatındaki gecikme için özür dileriz. Gönderiniz lojistik merkezimizle görüşülerek öncelikli dağıtım statüsüne alınmıştır. Güncel kargo takip numaranız: #{tracking}. Kurye hareketleri SMS ile paylaşılmaya devam edecektir.",
-        department: "Lojistik & Kargo Operasyonları",
-        internal_note: "Geciken sevkiyat tespit edildi. Kargo transfer merkezine acil sevk kaydı oluşturuldu. Öncelikli kurye ataması yapılması gerekiyor. Takip: #{tracking}",
-        suggested_action: "Kargo Önceliği Ver & Takip No İlet (#{tracking})",
-        time_saved_minutes: 19
+        draft_reply: "Merhaba, yolculuğunuzun GPS rota ve telemetri kayıtları yapay zekâ tarafından taranmıştır. Rota dışına çıkıldığı ve fazladan gişe geçişi yapıldığı tespit edilmiştir. #{refund} TL tutarındaki ücret farkı kayıtlı kredi kartınıza anında iade edilmiştir.",
+        department: "Ücret & Rota Uyuşmazlıkları Birimi",
+        internal_note: "GPS optimum rotası ile gerçekleşen sürüş rotası arasında sapma doğrulandı. Haksız köprü/gişe ücreti tespit edilip iade onaylandı.",
+        suggested_action: "GPS Sapmasını Doğrula & #{refund} TL İade Geç",
+        time_saved_minutes: 20
       }
-    elsif desc.match?(/(şifre|giriş|parola|login|hesap|oturum|email|e-posta|erişim)/)
+    elsif desc.match?(/(güvenlik|tehlike|kavga|agresif|hız|ihlal|alkol|kural|video)/)
       {
-        draft_reply: "Merhaba, hesabınızın güvenliğini sağlamak amacıyla tek kullanımlık güvenli şifre sıfırlama bağlantısı kayıtlı e-posta adresinize yönlendirilmiştir. Bağlantı 15 dakika boyunca geçerlidir.",
-        department: "Bilgi Teknolojileri & Hesap Güvenliği",
-        internal_note: "Kullanıcı hesap erişim kilidi veya şifre sıfırlama sorunu bildirdi. Kimlik doğrulama logları incelendi, şüpheli aktivite yok. Token üretildi.",
-        suggested_action: "Tek Kullanımlık Şifre Sıfırlama Bağlantısı Gönder",
-        time_saved_minutes: 14
+        draft_reply: "Merhaba, paylaştığınız güvenlik ihlali en yüksek öncelikle işleme alınmıştır. Yolcu ve sürüş emniyeti politikamız gereğince ilgili sürücü hesabı inceleme tamamlanana kadar geçici olarak askıya alınmış olup Emniyet Masamız tarafından ifadeye çağrılmıştır.",
+        department: "Yolcu & Sürüş Emniyeti (Trust & Safety)",
+        internal_note: "Kritik güvenlik ihlali raporlandı. Sürücü telemetrisi ve yolculuk içi hız verileri incelenmek üzere kriz masasına sevk edildi.",
+        suggested_action: "Sürücüyü Askıya Al & Güvenlik Soruşturması Başlat",
+        time_saved_minutes: 35
       }
-    elsif desc.match?(/(fatura|tahsilat|çekim|ödeme|kart|ücret|para kesil)/)
+    elsif desc.match?(/(eats|yemek|restoran|eksik|sipariş|kurye|soğuk|dökül)/)
       {
-        draft_reply: "Merhaba, muhasebe ve finans birimimiz işlemlerinizi incelemiştir. İlgili tutara ilişkin dekont ve e-fatura kopyası e-posta adresinize iletilmiş, mükerrer provizyon varsa anında iptal talimatı verilmiştir.",
-        department: "Muhasebe & Finansal Operasyonlar",
-        internal_note: "Mükerrer çekim/fatura inceleme talebi. Banka sanal POS ekstreleri ile ERP fatura kayıtlarının eşleştirilmesi ve ters bakiye varsa mutabakatı gerekiyor.",
-        suggested_action: "Fatura Doğrulama & Muhasebe Dekontu Gönder",
-        time_saved_minutes: 32
+        draft_reply: "Merhaba, Uber Eats siparişinizde yaşadığınız sorun için özür dileriz. Restoranla teyit sağlanmış olup eksik ve hasarlı ürünlerin tutarı Uber Eats cüzdanınıza anında kredi olarak yüklenmiştir.",
+        department: "Uber Eats Restoran Operasyonları",
+        internal_note: "Eksik/hasarlı kurye teslimatı teyit edildi. Restoran mutabakat sistemine kesinti kaydı düşüldü.",
+        suggested_action: "Eksik Ürünü Onayla & Cüzdana Bakiye Yükle",
+        time_saved_minutes: 18
       }
     else
       {
-        draft_reply: "Merhaba, ilettiğiniz konu OmniResolve akıllı destek sistemimiz tarafından incelenmiş ve ilgili operasyonel birime aktarılmıştır. Çözüm adımları en kısa sürede tarafınıza iletilecektir.",
-        department: "Genel Müşteri Operasyonları",
-        internal_note: "Ön değerlendirme tamamlandı. Standart destek prosedürleri kapsamında saha uzmanına atandı.",
-        suggested_action: "Operasyonel İnceleme & Öncelikli Yanıt İlet",
-        time_saved_minutes: 12
+        draft_reply: "Merhaba, ilettiğiniz destek talebi Uber akıllı operasyon motoru tarafından incelenmiş ve ilgili uzman masamıza aktarılmıştır. Çözüm detayları en kısa sürede tarafınıza iletilecektir.",
+        department: "Genel Operasyon Masası",
+        internal_note: "Talep sınıflandırıldı. Standart Uber operasyon protokolleri dahilinde uzman incelemesi başlatıldı.",
+        suggested_action: "Talebi Çözümle & Bilgilendir",
+        time_saved_minutes: 15
       }
     end
+  end
   end
 end
